@@ -1,0 +1,125 @@
+# CI des Plugins. Zwei Jobs:
+#
+#   tests  - startet ein frisches Koha (koha-testing-docker), installiert
+#            das Plugin und laesst t/ laufen; bei jedem Push und Pull Request.
+#   build  - baut das kpz-Bundle ueber build.sh. Das Ergebnis haengt an
+#            jedem Lauf als Artefakt (Actions-Tab, zum Herunterladen);
+#            bei einem Tag wie v1.0.0 wird es zusaetzlich an das
+#            GitHub-Release angehaengt.
+#
+# Release machen: Version im Modul erhoehen, committen, dann
+#   git tag v<version> && git push --tags
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tests:
+    name: Tests in koha-testing-docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Aktuellen stabilen Koha-Zweig ermitteln und auschecken
+      - name: Get Koha stable branch
+        id: koha-version
+        uses: bywatersolutions/github-action-koha-get-version-by-label@main
+        with:
+          version-label: stable
+
+      - name: Check out Koha
+        run: |
+          cd ..
+          git clone --branch ${{ steps.koha-version.outputs.current-branch-name }} --single-branch --depth 1 https://github.com/Koha-Community/Koha.git koha
+
+      - name: Set up koha-testing-docker
+        run: |
+          sudo sysctl -w vm.max_map_count=262144
+          echo "SYNC_REPO=$(cd .. && pwd)/koha" >> "$GITHUB_ENV"
+          echo "LOCAL_USER_ID=$(id -u)" >> "$GITHUB_ENV"
+          echo "KOHA_IMAGE=main" >> "$GITHUB_ENV"
+          echo "KOHA_MARC_FLAVOUR=marc21" >> "$GITHUB_ENV"
+          echo "KOHA_INTRANET_URL=http://127.0.0.1:8081" >> "$GITHUB_ENV"
+          wget -O docker-compose.yml https://gitlab.com/koha-community/koha-testing-docker/-/raw/main/docker-compose.yml
+          wget -O .env https://gitlab.com/koha-community/koha-testing-docker/-/raw/main/env/defaults.env
+          echo "CACHE_DATE=$(date +%Y-%m-%d)" >> "$GITHUB_ENV"
+
+      # Die Docker-Images (mehrere GB) werden einen Tag lang gecacht;
+      # nur der erste Lauf des Tages muss sie wirklich ziehen.
+      - name: Cache Docker images
+        id: docker-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/docker-images
+          key: docker-koha-${{ env.CACHE_DATE }}-${{ hashFiles('docker-compose.yml') }}
+
+      - name: Load cached Docker images
+        if: steps.docker-cache.outputs.cache-hit == 'true'
+        run: docker load -i /tmp/docker-images/images.tar
+
+      - name: Pull Docker images
+        if: steps.docker-cache.outputs.cache-hit != 'true'
+        run: |
+          docker compose pull
+          mkdir -p /tmp/docker-images
+          docker save $(docker compose config --images) -o /tmp/docker-images/images.tar
+
+      - name: Start Koha services
+        run: docker compose -f docker-compose.yml -p koha up --detach
+
+      - name: Wait for Koha to be ready
+        run: |
+          for i in $(seq 1 60); do
+            if docker compose -p koha exec -T koha perl -e '
+              use C4::Context;
+              my $dbh = C4::Context->dbh or die;
+              $dbh->selectrow_array("SELECT 1 FROM systempreferences LIMIT 1") or die;
+            ' 2>/dev/null; then
+              echo "Koha is ready after ~${i}0 seconds."
+              break
+            fi
+            sleep 10
+          done
+
+      - name: Install plugin and run tests
+        run: |
+          docker cp . "$(docker compose -p koha ps -q koha)":/var/lib/koha/kohadev/plugins
+          docker compose -p koha exec koha /kohadevbox/koha/misc/devel/install_plugins.pl
+          docker compose -p koha exec koha bash -c 'PERL5LIB="$PERL5LIB:/var/lib/koha/kohadev/plugins" prove -v /var/lib/koha/kohadev/plugins/t'
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose -p koha logs koha 2>&1 | tail -100
+
+  build:
+    name: Build kpz bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build kpz (runs build.sh)
+        run: ./build.sh
+
+      # Bei jedem Lauf als Artefakt herunterladbar (Actions-Tab)
+      - name: Upload kpz artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: koha-plugin-library-of-things
+          path: '*.kpz'
+
+      # Bei einem v*-Tag zusaetzlich an das GitHub-Release anhaengen
+      - name: Attach kpz to GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: '*.kpz'

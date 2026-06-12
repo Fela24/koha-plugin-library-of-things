@@ -1,0 +1,155 @@
+[% USE raw %]
+[% USE Asset %]
+[% USE Koha %]
+[% USE KohaDates %]
+
+[% INCLUDE 'doc-head-open.inc' %]
+<title>Koha &rsaquo; Plugins &rsaquo; Library of Things &rsaquo; Konfiguration</title>
+[% INCLUDE 'doc-head-close.inc' %]
+</head>
+
+<body id="plugin_library_of_things_configure" class="plugin">
+[% WRAPPER 'header.inc' %]
+    [% INCLUDE 'prefs-admin-search.inc' %]
+[% END %]
+
+[% WRAPPER 'sub-header.inc' %]
+    [% WRAPPER breadcrumbs %]
+        [% WRAPPER breadcrumb_item %]
+            <a href="/cgi-bin/koha/admin/admin-home.pl">Administration</a>
+        [% END %]
+        [% WRAPPER breadcrumb_item %]
+            <a href="/cgi-bin/koha/plugins/plugins-home.pl">Plugins</a>
+        [% END %]
+        [% WRAPPER breadcrumb_item bc_active = 1 %]
+            <span>Library of Things: Konfiguration</span>
+        [% END %]
+    [% END #/ WRAPPER breadcrumbs %]
+[% END #/ WRAPPER sub-header.inc %]
+
+<div class="main container-fluid">
+    <div class="row">
+        [%# Beide Klassensaetze, damit das Layout auf Bootstrap 3 (Koha 22.11,
+            col-sm-push/pull) und Bootstrap 5 (neuere Koha-Versionen, order-*)
+            stimmt; unbekannte Klassen ignoriert der jeweils andere. %]
+        <div class="col-sm-10 col-sm-push-2 col-md-10 order-md-2 order-sm-1">
+            <main>
+                <h1>Library of Things: Konfiguration</h1>
+
+                [% IF saved %]
+                    <div class="alert alert-info">Einstellungen gespeichert.</div>
+                [% END %]
+
+                [% IF save_error %]
+                    <div class="alert alert-warning">Der gewählte Medientyp existiert nicht; nichts gespeichert.</div>
+                [% END %]
+
+                [% IF days_error %]
+                    <div class="alert alert-warning">Der Zeitraum für das „Neu"-Band muss eine Zahl sein; nichts gespeichert.</div>
+                [% END %]
+
+                [% IF csrf_error %]
+                    <div class="alert alert-warning">Sitzung abgelaufen oder ungültiges Formular; bitte erneut speichern.</div>
+                [% END %]
+
+                <form method="post">
+                    <input type="hidden" name="class" value="[% CLASS | html %]" />
+                    <input type="hidden" name="method" value="[% METHOD | html %]" />
+                    <input type="hidden" name="op" value="cud-save" />
+                    [%# Eigenes CSRF-Token des Plugins; Koha 22.11 hat noch keinen
+                        zentralen CSRF-Schutz fuer Plugin-POSTs. %]
+                    <input type="hidden" name="lot_csrf_token" value="[% csrf_token | html %]" />
+                    [%# Neuere Koha-Versionen verlangen bei POST zusaetzlich das
+                        zentrale CSRF-Token; auf aelteren Versionen gibt es das
+                        Include noch nicht, daher TRY. %]
+                    [% TRY %][% PROCESS 'csrf-token.inc' %][% CATCH %][% END %]
+
+                    <fieldset class="rows">
+                        <legend>Medientyp</legend>
+                        <ol>
+                            <li>
+                                <label for="item_type">Medientyp für Dinge:</label>
+                                <select name="item_type" id="item_type">
+                                    <option value="">Bitte wählen</option>
+                                    [% FOREACH it IN item_types %]
+                                        [% IF it.itemtype == item_type %]
+                                            <option value="[% it.itemtype | html %]" selected="selected">[% it.translated_description | html %]</option>
+                                        [% ELSE %]
+                                            <option value="[% it.itemtype | html %]">[% it.translated_description | html %]</option>
+                                        [% END %]
+                                    [% END %]
+                                </select>
+                                <span class="hint">Exemplare mit diesem Medientyp gehören zur Library of Things.</span>
+                            </li>
+                            <li>
+                                <label for="new_badge_days">„Neu"-Band, Zeitraum in Tagen:</label>
+                                <input type="number" name="new_badge_days" id="new_badge_days" min="0" value="[% new_badge_days | html %]" />
+                                <span class="hint">Exemplare mit Zugangsdatum in diesem Zeitraum bekommen das „Neu"-Band. Leer = 30 Tage, 0 schaltet das Band ab.</span>
+                            </li>
+                        </ol>
+                    </fieldset>
+
+                    <fieldset class="rows">
+                        <legend>Texte</legend>
+                        <p class="hint">Alle Texte der OPAC-Seite; leere Felder fallen auf den deutschen Standardtext zurück.</p>
+                        <ol>
+                            <li>
+                                <label for="text_intro">Einleitung:</label>
+                                <input type="text" name="text_intro" id="text_intro" size="80" value="[% texts.intro | html %]" />
+                            </li>
+                            <li>
+                                <label for="text_info_label">Infobox, Beschriftung:</label>
+                                <input type="text" name="text_info_label" id="text_info_label" size="80" value="[% texts.info_label | html %]" />
+                            </li>
+                            <li>
+                                <label for="text_info_content">Infobox, Inhalt (HTML):</label>
+                                <textarea name="text_info_content" id="text_info_content" rows="10" cols="80">[% texts.info_content | html %]</textarea>
+                            </li>
+                            <li>
+                                <label for="text_search_placeholder">Suchfeld, Platzhalter:</label>
+                                <input type="text" name="text_search_placeholder" id="text_search_placeholder" size="80" value="[% texts.search_placeholder | html %]" />
+                            </li>
+                            <li>
+                                <label for="text_filter_all">Filter, „alle"-Button:</label>
+                                <input type="text" name="text_filter_all" id="text_filter_all" size="80" value="[% texts.filter_all | html %]" />
+                            </li>
+                            <li>
+                                <label for="text_badge_available">Badge, verfügbar:</label>
+                                <input type="text" name="text_badge_available" id="text_badge_available" size="80" value="[% texts.badge_available | html %]" />
+                            </li>
+                            <li>
+                                <label for="text_badge_unavailable">Badge, ausgeliehen:</label>
+                                <input type="text" name="text_badge_unavailable" id="text_badge_unavailable" size="80" value="[% texts.badge_unavailable | html %]" />
+                            </li>
+                            <li>
+                                <label for="text_ribbon_new">„Neu"-Band:</label>
+                                <input type="text" name="text_ribbon_new" id="text_ribbon_new" size="80" value="[% texts.ribbon_new | html %]" />
+                            </li>
+                            <li>
+                                <label for="text_no_results">Keine Treffer (HTML):</label>
+                                <textarea name="text_no_results" id="text_no_results" rows="5" cols="80">[% texts.no_results | html %]</textarea>
+                            </li>
+                            <li>
+                                <label for="text_empty_state">Leere Seite (kein Medientyp/keine Dinge):</label>
+                                <input type="text" name="text_empty_state" id="text_empty_state" size="80" value="[% texts.empty_state | html %]" />
+                            </li>
+                        </ol>
+                    </fieldset>
+
+                    <fieldset class="action">
+                        <input type="submit" class="btn btn-primary" value="Speichern" />
+                        <a class="cancel" href="/cgi-bin/koha/plugins/plugins-home.pl">Abbrechen</a>
+                    </fieldset>
+                </form>
+            </main>
+        </div> <!-- /main column -->
+
+        <div class="col-sm-2 col-sm-pull-10 col-md-2 order-sm-2 order-md-1">
+            <aside>
+                [% INCLUDE 'admin-menu.inc' %]
+            </aside>
+        </div> <!-- /aside column -->
+    </div> <!-- /.row -->
+</div> <!-- /.main.container-fluid -->
+
+[% INCLUDE 'intranet-bottom.inc' %]

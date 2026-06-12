@@ -1,0 +1,60 @@
+<!-- Generiert vom Plugin "Library of Things" - Aenderungen an dieser Seite werden ueberschrieben. -->
+[%# Alle Texte kommen aus der Plugin-Konfiguration (texts.*, deutsche
+    Standardwerte). Regel: JEDE Variable wird mit | html (bzw. | uri in
+    URLs) ausgegeben; die einzigen Ausnahmen sind texts.info_content und
+    texts.no_results, die bewusst HTML enthalten duerfen. %]
+<div id="library-of-things">
+  <link rel="stylesheet" href="/api/v1/contrib/libraryofthings/static/css/library-of-things.css?v=[% plugin_version | uri %]">
+
+  [%# Kopfzeile: Intro links, Infobox rechts als natives Aufklapp-Element
+      (funktioniert ohne JavaScript). Der geoeffnete Inhalt legt sich als
+      Dropdown ueber die Seite, nichts verschiebt sich. %]
+  <div class="lot-header">
+    <p class="lot-intro">[% texts.intro | html %]</p>
+    <details class="lot-info" open>
+      <summary>[% texts.info_label | html %]</summary>
+      <div class="lot-info-content">
+        [% texts.info_content %]
+      </div>
+    </details>
+  </div>
+
+  [% IF things.size %]
+    [%# Suche und Filter brauchen JavaScript; ohne JS bleiben sie versteckt
+        (hidden), das Skript unten blendet sie ein. %]
+    <div class="lot-controls" hidden>
+      <input type="search" id="lot-search" placeholder="[% texts.search_placeholder | html %]" aria-label="[% texts.search_placeholder | html %]">
+      [% IF categories.size %]
+        <div class="lot-filter-buttons">
+          <button type="button" class="lot-filter-btn lot-filter-active" data-filter="">[% texts.filter_all | html %]</button>
+          [% FOREACH category IN categories %]
+            <button type="button" class="lot-filter-btn" data-filter="[% category.code | html %]">[% category.description | html %]</button>
+          [% END %]
+        </div>
+      [% END %]
+    </div>
+
+    <div class="lot-grid">
+        [% FOREACH thing IN things %]
+          <a class="lot-tile" data-biblionumber="[% thing.biblionumber | html %]" data-category="[% thing.category_codes | html %]" href="/cgi-bin/koha/opac-detail.pl?biblionumber=[% thing.biblionumber | uri %]">
+            [% IF thing.is_new %]
+              <span class="lot-ribbon-wrapper"><span class="lot-glow">&nbsp;</span><span class="lot-ribbon">[% texts.ribbon_new | html %]</span></span>
+            [% END %]
+            <img src="/cgi-bin/koha/opac-image.pl?thumbnail=1&amp;biblionumber=[% thing.biblionumber | uri %]" alt="[% thing.title | html %]">
+            <span class="lot-badge [% thing.available ? 'lot-available' : '' %]">
+              [%- IF thing.available %][% texts.badge_available | html %][% ELSE %][% texts.badge_unavailable | html %][% END -%]
+            </span>
+            <span class="lot-label">[% thing.title | html %]</span>
+          </a>
+        [% END %]
+
+        <div class="lot-no-results" hidden>
+          [% texts.no_results %]
+        </div>
+    </div>
+  [% ELSE %]
+    <p>[% texts.empty_state | html %]</p>
+  [% END %]
+
+  <script src="/api/v1/contrib/libraryofthings/static/js/library-of-things.js?v=[% plugin_version | uri %]" defer></script>
+</div>
