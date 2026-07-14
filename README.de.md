@@ -88,6 +88,18 @@ entsprechend vergeben. Das Speichern ist über einen eigenen
 Koha::Token-CSRF-Check abgesichert, unabhängig davon, ob die
 Koha-Version CSRF zentral erzwingt.
 
+### Auf die Seite verlinken
+
+Die Seite ist eine Koha-Zusatzinhaltsseite und wird unter
+`/cgi-bin/koha/opac-page.pl?page_id=<id>` aufgerufen (die id steht unter
+*Werkzeuge → Zusatzinhalte*). Diese URL für OPAC-Navigation oder
+Menü-Links verwenden. Die id bleibt über Plugin-Upgrades und
+Inhalts-Aktualisierungen hinweg **stabil** — das Plugin aktualisiert die
+bestehende Seite, statt sie neu anzulegen. Sie ändert sich nur, wenn das
+Plugin deinstalliert und neu installiert wird (die Deinstallation entfernt
+die Seite, eine Neuinstallation legt eine neue an); nach einer
+Neuinstallation daher fest hinterlegte Links prüfen.
+
 ## Bauen & installieren
 
 ```sh

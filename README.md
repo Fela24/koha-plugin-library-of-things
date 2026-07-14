@@ -83,6 +83,17 @@ can author OPAC content; assign the permission accordingly. Saving is
 CSRF-protected by the plugin's own Koha::Token check, independent of
 whether the Koha version enforces CSRF centrally.
 
+### Linking to the page
+
+The page is a Koha additional-contents page, reached at
+`/cgi-bin/koha/opac-page.pl?page_id=<id>` (look the id up under *Tools →
+Additional contents*). Use that URL for OPAC navigation or menu links. The
+id is **stable across plugin upgrades and content refreshes** — the plugin
+updates the existing page in place rather than recreating it. It changes
+only if the plugin is uninstalled and reinstalled (uninstall removes the
+page, a fresh install creates a new one), so re-check any hardcoded link
+after a reinstall.
+
 ## Build & install
 
 ```sh
