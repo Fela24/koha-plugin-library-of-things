@@ -101,7 +101,7 @@ subtest 'install creates the OPAC page with materialized content' => sub {
 };
 
 subtest 'data changes re-render the page instantly' => sub {
-    plan tests => 23;
+    plan tests => 24;
 
     # Fixtures: an item type marking the things, two biblios with items of
     # that type (one of them twice, to prove one tile per biblio); plus a
@@ -161,6 +161,30 @@ subtest 'data changes re-render the page instantly' => sub {
     $html = content_object()->content;
     unlike( tile_for( $html, $sewing->biblionumber ), qr/lot-available/xms, 'checked-out thing shows as unavailable' );
     like( tile_for( $html, $drill->biblionumber ), qr/lot-available/xms, 'other things stay available' );
+
+    # Holds: a reserved item is not available. Reserve both of the drill's
+    # items (reservedate today, not suspended, so current_holds counts them)
+    # and the tile flips, driven by the hold hook Koha would fire.
+    my $drill_hold;
+    for my $drill_item ( $drill_item_new, $drill_item_old ) {
+        $drill_hold = $builder->build_object(
+            {   class => 'Koha::Holds',
+                value => {
+                    biblionumber => $drill->biblionumber,
+                    itemnumber   => $drill_item->itemnumber,
+                    reservedate  => dt_from_string()->ymd,
+                    waitingdate  => undef,
+                    found        => undef,
+                    suspend      => 0,
+                    priority     => 1,
+                },
+            }
+        );
+    }
+    $plugin->after_hold_action( { action => 'place', payload => { hold => $drill_hold } } );
+
+    $html = content_object()->content;
+    unlike( tile_for( $html, $drill->biblionumber ), qr/lot-available/xms, 'reserved thing shows as unavailable' );
 
     # Irrelevant changes (other item type, biblio not on the page) skip
     # the refresh entirely, so batch jobs stay cheap

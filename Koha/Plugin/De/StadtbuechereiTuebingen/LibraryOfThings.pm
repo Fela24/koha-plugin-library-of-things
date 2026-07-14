@@ -23,6 +23,8 @@ use Carp    qw( carp );
 use English qw( -no_match_vars );
 use Readonly;
 
+use C4::Context;
+
 use Koha::AdditionalContent;
 use Koha::AdditionalContents;
 use Koha::AuthorisedValues;
@@ -59,7 +61,7 @@ HTML
     search_placeholder => 'Bibliothek der Dinge durchsuchen',
     filter_all         => 'Alle anzeigen',
     badge_available    => 'Verfügbar',
-    badge_unavailable  => 'Ausgeliehen',
+    badge_unavailable  => 'Nicht verfügbar',
     ribbon_new         => 'Neu',
     no_results         => <<'HTML',
 Ups! Hier gibt es aktuell nichts zu sehen.<br>
@@ -85,8 +87,8 @@ opac-page.tt), so the page has to store finished HTML. The plugin owns the
 markup: it renders its page template (opac-page.tt in the plugin
 directory) and writes the result into the page
 whenever the underlying data may have changed: instantly, via the
-C<after_biblio_action>/C<after_item_action>/C<after_circ_action> hooks,
-plus on install/upgrade and configure. Each hook first runs a cheap
+C<after_biblio_action>/C<after_item_action>/C<after_circ_action>/C<after_hold_action>
+hooks, plus on install/upgrade and configure. Each hook first runs a cheap
 relevance check (an item of the configured type involved, or a biblio
 that is on the page), so batch jobs over the rest of the catalogue do not
 pay for a render per record; anything possibly relevant recomputes the
@@ -96,14 +98,14 @@ cataloguing/circulation action that triggered it.
 
 =cut
 
-our $VERSION  = '1.0.0';
+our $VERSION  = '1.1.0';
 our $METADATA = {
     name        => 'Library of Things',
     author      => 'Stadtbuecherei Tuebingen',
     description =>
-        'Pflegt die OPAC-Seite „Bibliothek der Dinge": ein Kachel-Raster aller Dinge des konfigurierten Medientyps mit Cover, Verfügbarkeits-Badge, „Neu"-Band, Suche und Kategorie-Filtern; aktualisiert sich automatisch bei Katalog- und Ausleihänderungen.',
+        'Pflegt die OPAC-Seite „Bibliothek der Dinge": ein Kachel-Raster aller Dinge des konfigurierten Medientyps mit Cover, Verfügbarkeits-Badge, „Neu"-Band, Suche und Kategorie-Filtern; aktualisiert sich automatisch bei Katalog-, Ausleih- und Vorbestellungsänderungen.',
     date_authored   => '2026-06-11',
-    date_updated    => '2026-06-12',
+    date_updated    => '2026-07-14',
     minimum_version => '22.11.00',
     maximum_version => undef,
     version         => $VERSION,
@@ -410,6 +412,44 @@ sub after_circ_action {
     return;
 }
 
+=head2 after_hold_action
+
+    $plugin->after_hold_action($params);
+
+Koha plugin hook, fires when a hold is placed, filled, cancelled, suspended
+or resumed. A reserved item counts as unavailable (see
+L</_item_is_available>), so the badge has to follow hold changes just like
+checkouts. Re-renders the page unless the hold's item or biblio is clearly
+irrelevant. Available since Koha 22.05, so it covers the whole supported
+range.
+
+=cut
+
+sub after_hold_action {
+    my ( $self, $params ) = @_;
+
+    $params //= {};
+    my $hold = $params->{payload} ? $params->{payload}->{hold} : undef;
+    if ($hold) {
+
+        # Item-level holds carry an itemnumber; title-level holds only a
+        # biblionumber until they are filled. Check whichever we have.
+        my $item = $hold->itemnumber ? Koha::Items->find( $hold->itemnumber ) : undef;
+        if ($item) {
+            if ( !$self->_item_is_relevant($item) ) {
+                return;
+            }
+        }
+        elsif ( !$self->_biblio_is_relevant( $hold->biblionumber ) ) {
+            return;
+        }
+    }
+
+    $self->_refresh_page_guarded();
+
+    return;
+}
+
 =head2 _item_is_relevant
 
     if ( $self->_item_is_relevant($item) ) { ... }
@@ -696,7 +736,7 @@ one item of the configured type:
     {
         biblionumber   => 123,
         title          => 'Akku-Bohrschrauber',
-        available      => 2,            # items neither checked out, lost nor withdrawn
+        available      => 2,            # items genuinely lendable (see _item_is_available)
         is_new         => 1,            # an item was accessioned in the last $NEW_BADGE_DAYS days
         categories     => [ { code => 'WERKZEUG', description => 'Werkzeuge' } ],
         category_codes => 'WERKZEUG',   # space separated, for the data-category attribute
@@ -741,7 +781,7 @@ sub _things {
             push @{$things}, $thing;
         }
 
-        if ( !$item->onloan && !$item->itemlost && !$item->withdrawn ) {
+        if ( _item_is_available($item) ) {
             $thing->{available}++;
         }
 
@@ -769,6 +809,42 @@ sub _things {
     }
 
     return $things;
+}
+
+=head2 _item_is_available
+
+    my $bool = _item_is_available($item);
+
+Internal. Returns true only when the item is genuinely lendable right now.
+Follows the same definition of C<available> that Koha computes in
+L<Koha::Item/_status>: an item counts as available only when it is not
+checked out, in transit, lost, withdrawn, damaged, not for loan, on hold
+(reserved) or recalled. Everything that is not C<available> is treated as
+unavailable, so reserved things no longer show up as free.
+
+C<_status> only exists on Koha >= 24.11.08, but this plugin supports back to
+22.11, so the checks are spelled out here using methods present across that
+range (C<current_holds> rather than C<first_hold>, the itemtype notforloan
+fallback rather than C<effective_not_for_loan_status>).
+
+=cut
+
+sub _item_is_available {
+    my ($item) = @_;
+
+    return 0 if $item->onloan;
+    return 0 if $item->itemlost;
+    return 0 if $item->withdrawn;
+    return 0 if $item->damaged;
+
+    my $itemtype = $item->itemtype;
+    return 0 if $item->notforloan || ( $itemtype && $itemtype->notforloan );
+
+    return 0 if $item->get_transfer;
+    return 0 if $item->current_holds->count;
+    return 0 if C4::Context->preference('UseRecalls') && $item->recall;
+
+    return 1;
 }
 
 =head2 _new_badge_days

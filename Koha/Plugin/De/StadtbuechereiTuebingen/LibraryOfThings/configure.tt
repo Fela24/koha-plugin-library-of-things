@@ -118,7 +118,7 @@
                                 <input type="text" name="text_badge_available" id="text_badge_available" size="80" value="[% texts.badge_available | html %]" />
                             </li>
                             <li>
-                                <label for="text_badge_unavailable">Badge, ausgeliehen:</label>
+                                <label for="text_badge_unavailable">Badge, nicht verfügbar:</label>
                                 <input type="text" name="text_badge_unavailable" id="text_badge_unavailable" size="80" value="[% texts.badge_unavailable | html %]" />
                             </li>
                             <li>
